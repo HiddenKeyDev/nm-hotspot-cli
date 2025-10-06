@@ -14,6 +14,10 @@ DEFAULT_BAND="bg"
 CONNECTION_NAME="nm-hotspot"
 CONFIG_DIR="$HOME/.config/nm-hotspot"
 CONFIG_FILE="$CONFIG_DIR/hotspot.conf"
+LOG_FILE="$CONFIG_DIR/nm-hotspot.log"
+LOG_MAX_SIZE=1048576  # 1MB in bytes
+ENABLE_LOGGING=false
+LOG_PRIVACY=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -37,6 +41,49 @@ print_info() {
 
 print_warning() {
     echo -e "${YELLOW}$1${NC}"
+}
+
+# Logging functions
+log_message() {
+    # Only log if logging is enabled
+    if [ "$ENABLE_LOGGING" != "true" ]; then
+        return 0
+    fi
+
+    local level="$1"
+    local message="$2"
+    local ssid="${3:-}"
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "$CONFIG_DIR"
+    
+    # Check log file size and rotate if needed
+    if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || stat -c%s "$LOG_FILE" 2>/dev/null)" -ge "$LOG_MAX_SIZE" ]; then
+        rotate_log
+    fi
+    
+    # Format timestamp
+    local timestamp
+    timestamp=$(date "+%Y-%m-%d %H:%M:%S")
+    
+    # Build log entry
+    local log_entry="[$timestamp] $level: $message"
+    
+    # Add SSID if provided and privacy mode is disabled
+    if [ -n "$ssid" ] && [ "$LOG_PRIVACY" != "true" ]; then
+        log_entry="$log_entry - SSID: $ssid"
+    fi
+    
+    # Append to log file
+    echo "$log_entry" >> "$LOG_FILE"
+}
+
+rotate_log() {
+    if [ -f "$LOG_FILE" ]; then
+        local backup_file="${LOG_FILE}.old"
+        mv "$LOG_FILE" "$backup_file"
+        print_info "Log file rotated to ${backup_file}"
+    fi
 }
 
 check_dependencies() {
@@ -67,6 +114,10 @@ save_config() {
 SSID="$SSID"
 PASSWORD="$PASSWORD"
 BAND="$BAND"
+
+# Logging settings
+ENABLE_LOGGING=${ENABLE_LOGGING:-false}
+LOG_PRIVACY=${LOG_PRIVACY:-false}
 EOF
     chmod 600 "$CONFIG_FILE"
     print_success "Configuration saved to $CONFIG_FILE"
@@ -89,6 +140,7 @@ Commands:
     status              Show hotspot status
     list                List available wireless devices
     config              Show current configuration
+    log                 Show log entries
     help                Show this help message
 
 Options (for create command):
@@ -97,12 +149,26 @@ Options (for create command):
     -b, --band BAND         Set band: bg (2.4GHz) or a (5GHz) (default: $DEFAULT_BAND)
     --save                  Save settings as default
 
+Options (for log command):
+    --tail N                Show last N log entries (default: 20)
+    --clear                 Clear the log file
+
 Examples:
     nm-hotspot create
     nm-hotspot create -s MyNetwork -p MyPassword123
     nm-hotspot create -s MyNetwork -p MyPassword123 --save
     nm-hotspot stop
     nm-hotspot status
+    nm-hotspot log
+    nm-hotspot log --tail 50
+    nm-hotspot log --clear
+
+Logging:
+    Enable logging by adding to $CONFIG_FILE:
+        ENABLE_LOGGING=true
+        LOG_PRIVACY=true    # Optional: Don't log SSIDs
+
+    Log file location: $LOG_FILE
 
 EOF
 }
@@ -155,10 +221,12 @@ create_hotspot() {
     local DEVICE
     DEVICE=$(get_wifi_device)
     if [ -z "$DEVICE" ]; then
+        log_message "ERROR" "Failed to create hotspot - No wireless device found"
         print_error "No wireless device found"
         exit 1
     fi
 
+    log_message "INFO" "Creating hotspot - Band: $BAND" "$SSID"
     print_info "Creating hotspot on device: $DEVICE"
     print_info "SSID: $SSID"
     print_info "Band: $BAND ($([ "$BAND" = "bg" ] && echo "2.4GHz" || echo "5GHz"))"
@@ -177,9 +245,12 @@ create_hotspot() {
         ssid "$SSID" \
         band "$BAND" \
         password "$PASSWORD" || {
+        log_message "ERROR" "Failed to create hotspot - nmcli command failed" "$SSID"
         print_error "Failed to create hotspot"
         exit 1
     }
+
+    log_message "SUCCESS" "Hotspot created successfully" "$SSID"
 
     # Save configuration if requested
     if [ "$SAVE_CONFIG" = true ]; then
@@ -193,32 +264,40 @@ create_hotspot() {
 
 start_hotspot() {
     if ! nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
+        log_message "ERROR" "Failed to start hotspot - Connection not found"
         print_error "Hotspot connection not found. Create it first with 'nm-hotspot create'"
         exit 1
     fi
 
+    log_message "INFO" "Starting hotspot"
     print_info "Starting hotspot..."
     nmcli connection up "$CONNECTION_NAME" || {
+        log_message "ERROR" "Failed to start hotspot - nmcli command failed"
         print_error "Failed to start hotspot"
         exit 1
     }
 
+    log_message "SUCCESS" "Hotspot started successfully"
     print_success "Hotspot started successfully"
     show_status
 }
 
 stop_hotspot() {
     if ! nmcli connection show --active "$CONNECTION_NAME" &>/dev/null; then
+        log_message "INFO" "Stop requested but hotspot is not active"
         print_warning "Hotspot is not active"
         exit 0
     fi
 
+    log_message "INFO" "Stopping hotspot"
     print_info "Stopping hotspot..."
     nmcli connection down "$CONNECTION_NAME" || {
+        log_message "ERROR" "Failed to stop hotspot - nmcli command failed"
         print_error "Failed to stop hotspot"
         exit 1
     }
 
+    log_message "SUCCESS" "Hotspot stopped"
     print_success "Hotspot stopped successfully"
 }
 
@@ -280,6 +359,60 @@ show_config() {
     echo ""
 }
 
+show_log() {
+    local tail_count=20
+    local clear_log=false
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --tail)
+                tail_count="$2"
+                shift 2
+                ;;
+            --clear)
+                clear_log=true
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                echo "Usage: nm-hotspot log [--tail N] [--clear]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Clear log if requested
+    if [ "$clear_log" = true ]; then
+        if [ -f "$LOG_FILE" ]; then
+            true > "$LOG_FILE"
+            print_success "Log file cleared"
+            log_message "INFO" "Log file cleared by user"
+        else
+            print_warning "No log file found"
+        fi
+        return 0
+    fi
+    
+    # Show log entries
+    if [ ! -f "$LOG_FILE" ]; then
+        print_warning "No log file found"
+        echo "Logging can be enabled in $CONFIG_FILE"
+        echo "Set ENABLE_LOGGING=true"
+        return 0
+    fi
+    
+    if [ ! -s "$LOG_FILE" ]; then
+        print_info "Log file is empty"
+        return 0
+    fi
+    
+    print_info "=== Last $tail_count Log Entries ==="
+    echo ""
+    tail -n "$tail_count" "$LOG_FILE"
+    echo ""
+}
+
 # Main script
 main() {
     check_dependencies
@@ -311,6 +444,9 @@ main() {
             ;;
         config)
             show_config
+            ;;
+        log)
+            show_log "$@"
             ;;
         help|--help|-h)
             show_usage
