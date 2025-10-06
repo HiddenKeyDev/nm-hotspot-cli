@@ -1,0 +1,41 @@
+name: ShellCheck
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  shellcheck:
+    name: ShellCheck Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Run ShellCheck
+      uses: ludeeus/action-shellcheck@master
+      with:
+        scandir: '.'
+        severity: warning
+        format: gcc
+      env:
+        SHELLCHECK_OPTS: -e SC2034 -e SC1091
+    
+    - name: Check script executability
+      run: |
+        if [ ! -x src/nm-hotspot ]; then
+          echo "Error: src/nm-hotspot is not executable"
+          exit 1
+        fi
+        echo "Script is executable"
+    
+    - name: Verify installation scripts
+      run: |
+        if [ ! -f scripts/install.sh ] || [ ! -f scripts/uninstall.sh ]; then
+          echo "Error: Installation scripts missing"
+          exit 1
+        fi
+        echo "Installation scripts found"

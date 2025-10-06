@@ -1,0 +1,13 @@
+pkgbase = nm-hotspot-cli
+	pkgdesc = Simple command-line tool to create and manage Wi-Fi hotspots using NetworkManager
+	pkgver = 1.0.0
+	pkgrel = 1
+	url = https://github.com/HiddenKeyDev/nm-hotspot-cli
+	arch = any
+	license = MIT
+	depends = networkmanager
+	depends = bash
+	source = nm-hotspot-cli-1.0.0.tar.gz::https://github.com/HiddenKeyDev/nm-hotspot-cli/archive/v1.0.0.tar.gz
+	sha256sums = SKIP
+
+pkgname = nm-hotspot-cli

@@ -1,0 +1,323 @@
+#!/bin/bash
+#
+# nm-hotspot-cli - Simple command-line tool to create and manage Wi-Fi hotspots using NetworkManager
+# Author: HiddenKeyDev
+# License: MIT
+#
+
+set -e
+
+# Configuration
+DEFAULT_SSID="MyHotspot"
+DEFAULT_PASSWORD="12345678"
+DEFAULT_BAND="bg"
+CONNECTION_NAME="nm-hotspot"
+CONFIG_DIR="$HOME/.config/nm-hotspot"
+CONFIG_FILE="$CONFIG_DIR/hotspot.conf"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_error() {
+    echo -e "${RED}Error: $1${NC}" >&2
+}
+
+print_success() {
+    echo -e "${GREEN}$1${NC}"
+}
+
+print_info() {
+    echo -e "${BLUE}$1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}$1${NC}"
+}
+
+check_dependencies() {
+    if ! command -v nmcli &> /dev/null; then
+        print_error "NetworkManager (nmcli) is not installed"
+        echo "Install it with: sudo pacman -S networkmanager"
+        exit 1
+    fi
+}
+
+check_root() {
+    if [ "$EUID" -eq 0 ]; then
+        print_warning "Running as root is not recommended"
+    fi
+}
+
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+    fi
+}
+
+save_config() {
+    mkdir -p "$CONFIG_DIR"
+    cat > "$CONFIG_FILE" << EOF
+# nm-hotspot configuration
+SSID="$SSID"
+PASSWORD="$PASSWORD"
+BAND="$BAND"
+EOF
+    chmod 600 "$CONFIG_FILE"
+    print_success "Configuration saved to $CONFIG_FILE"
+}
+
+get_wifi_device() {
+    nmcli -t -f DEVICE,TYPE device | grep ':wifi$' | head -n1 | cut -d: -f1
+}
+
+show_usage() {
+    cat << EOF
+nm-hotspot-cli - Simple Wi-Fi hotspot manager using NetworkManager
+
+Usage: nm-hotspot [COMMAND] [OPTIONS]
+
+Commands:
+    create              Create and start a new hotspot
+    start               Start existing hotspot
+    stop                Stop the hotspot
+    status              Show hotspot status
+    list                List available wireless devices
+    config              Show current configuration
+    help                Show this help message
+
+Options (for create command):
+    -s, --ssid SSID         Set hotspot name (default: $DEFAULT_SSID)
+    -p, --password PASS     Set password (min 8 characters, default: $DEFAULT_PASSWORD)
+    -b, --band BAND         Set band: bg (2.4GHz) or a (5GHz) (default: $DEFAULT_BAND)
+    --save                  Save settings as default
+
+Examples:
+    nm-hotspot create
+    nm-hotspot create -s MyNetwork -p MyPassword123
+    nm-hotspot create -s MyNetwork -p MyPassword123 --save
+    nm-hotspot stop
+    nm-hotspot status
+
+EOF
+}
+
+create_hotspot() {
+    local SSID="$DEFAULT_SSID"
+    local PASSWORD="$DEFAULT_PASSWORD"
+    local BAND="$DEFAULT_BAND"
+    local SAVE_CONFIG=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -s|--ssid)
+                SSID="$2"
+                shift 2
+                ;;
+            -p|--password)
+                PASSWORD="$2"
+                shift 2
+                ;;
+            -b|--band)
+                BAND="$2"
+                shift 2
+                ;;
+            --save)
+                SAVE_CONFIG=true
+                shift
+                ;;
+            *)
+                print_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+
+    # Validate inputs
+    if [ ${#PASSWORD} -lt 8 ]; then
+        print_error "Password must be at least 8 characters long"
+        exit 1
+    fi
+
+    if [[ ! "$BAND" =~ ^(bg|a)$ ]]; then
+        print_error "Band must be 'bg' (2.4GHz) or 'a' (5GHz)"
+        exit 1
+    fi
+
+    # Get WiFi device
+    local DEVICE=$(get_wifi_device)
+    if [ -z "$DEVICE" ]; then
+        print_error "No wireless device found"
+        exit 1
+    fi
+
+    print_info "Creating hotspot on device: $DEVICE"
+    print_info "SSID: $SSID"
+    print_info "Band: $BAND ($([ "$BAND" = "bg" ] && echo "2.4GHz" || echo "5GHz"))"
+
+    # Delete existing connection if it exists
+    if nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
+        print_info "Removing existing hotspot connection..."
+        nmcli connection delete "$CONNECTION_NAME" &>/dev/null || true
+    fi
+
+    # Create hotspot connection
+    print_info "Creating hotspot..."
+    nmcli device wifi hotspot \
+        ifname "$DEVICE" \
+        con-name "$CONNECTION_NAME" \
+        ssid "$SSID" \
+        band "$BAND" \
+        password "$PASSWORD" || {
+        print_error "Failed to create hotspot"
+        exit 1
+    }
+
+    # Save configuration if requested
+    if [ "$SAVE_CONFIG" = true ]; then
+        save_config
+    fi
+
+    print_success "Hotspot created successfully"
+    echo ""
+    show_status
+}
+
+start_hotspot() {
+    if ! nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
+        print_error "Hotspot connection not found. Create it first with 'nm-hotspot create'"
+        exit 1
+    fi
+
+    print_info "Starting hotspot..."
+    nmcli connection up "$CONNECTION_NAME" || {
+        print_error "Failed to start hotspot"
+        exit 1
+    }
+
+    print_success "Hotspot started successfully"
+    show_status
+}
+
+stop_hotspot() {
+    if ! nmcli connection show --active "$CONNECTION_NAME" &>/dev/null; then
+        print_warning "Hotspot is not active"
+        exit 0
+    fi
+
+    print_info "Stopping hotspot..."
+    nmcli connection down "$CONNECTION_NAME" || {
+        print_error "Failed to stop hotspot"
+        exit 1
+    }
+
+    print_success "Hotspot stopped successfully"
+}
+
+show_status() {
+    local DEVICE=$(get_wifi_device)
+    
+    echo ""
+    print_info "=== Hotspot Status ==="
+    
+    if nmcli connection show --active "$CONNECTION_NAME" &>/dev/null; then
+        print_success "Status: ACTIVE"
+        
+        # Get connection details
+        local SSID=$(nmcli -t -f 802-11-wireless.ssid connection show "$CONNECTION_NAME" | cut -d: -f2)
+        local BAND=$(nmcli -t -f 802-11-wireless.band connection show "$CONNECTION_NAME" | cut -d: -f2)
+        
+        echo "SSID: $SSID"
+        echo "Band: $BAND ($([ "$BAND" = "bg" ] && echo "2.4GHz" || echo "5GHz"))"
+        echo "Device: $DEVICE"
+        
+        # Show connected clients (if available)
+        echo ""
+        print_info "Connected clients:"
+        nmcli device wifi show-password 2>/dev/null || echo "  (client list not available)"
+    else
+        if nmcli connection show "$CONNECTION_NAME" &>/dev/null; then
+            print_warning "Status: INACTIVE (connection exists)"
+            echo "Run 'nm-hotspot start' to activate"
+        else
+            print_warning "Status: NOT CONFIGURED"
+            echo "Run 'nm-hotspot create' to set up a hotspot"
+        fi
+    fi
+    echo ""
+}
+
+list_devices() {
+    print_info "=== Available Wireless Devices ==="
+    echo ""
+    nmcli device status | grep -E 'DEVICE|wifi'
+    echo ""
+}
+
+show_config() {
+    print_info "=== Current Configuration ==="
+    echo ""
+    if [ -f "$CONFIG_FILE" ]; then
+        cat "$CONFIG_FILE"
+    else
+        echo "No saved configuration found"
+        echo "Default values will be used:"
+        echo "  SSID: $DEFAULT_SSID"
+        echo "  PASSWORD: $DEFAULT_PASSWORD"
+        echo "  BAND: $DEFAULT_BAND"
+    fi
+    echo ""
+}
+
+# Main script
+main() {
+    check_dependencies
+    load_config
+
+    if [ $# -eq 0 ]; then
+        show_usage
+        exit 0
+    fi
+
+    local command=$1
+    shift
+
+    case $command in
+        create)
+            create_hotspot "$@"
+            ;;
+        start)
+            start_hotspot
+            ;;
+        stop)
+            stop_hotspot
+            ;;
+        status)
+            show_status
+            ;;
+        list)
+            list_devices
+            ;;
+        config)
+            show_config
+            ;;
+        help|--help|-h)
+            show_usage
+            ;;
+        *)
+            print_error "Unknown command: $command"
+            echo ""
+            show_usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
