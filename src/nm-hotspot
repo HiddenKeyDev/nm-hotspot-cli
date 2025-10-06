@@ -385,7 +385,7 @@ show_log() {
     # Clear log if requested
     if [ "$clear_log" = true ]; then
         if [ -f "$LOG_FILE" ]; then
-            > "$LOG_FILE"
+            true > "$LOG_FILE"
             print_success "Log file cleared"
             log_message "INFO" "Log file cleared by user"
         else
