@@ -152,7 +152,8 @@ create_hotspot() {
     fi
 
     # Get WiFi device
-    local DEVICE=$(get_wifi_device)
+    local DEVICE
+    DEVICE=$(get_wifi_device)
     if [ -z "$DEVICE" ]; then
         print_error "No wireless device found"
         exit 1
@@ -222,7 +223,8 @@ stop_hotspot() {
 }
 
 show_status() {
-    local DEVICE=$(get_wifi_device)
+    local DEVICE
+    DEVICE=$(get_wifi_device)
     
     echo ""
     print_info "=== Hotspot Status ==="
@@ -231,8 +233,10 @@ show_status() {
         print_success "Status: ACTIVE"
         
         # Get connection details
-        local SSID=$(nmcli -t -f 802-11-wireless.ssid connection show "$CONNECTION_NAME" | cut -d: -f2)
-        local BAND=$(nmcli -t -f 802-11-wireless.band connection show "$CONNECTION_NAME" | cut -d: -f2)
+        local SSID
+        local BAND
+        SSID=$(nmcli -t -f 802-11-wireless.ssid connection show "$CONNECTION_NAME" | cut -d: -f2)
+        BAND=$(nmcli -t -f 802-11-wireless.band connection show "$CONNECTION_NAME" | cut -d: -f2)
         
         echo "SSID: $SSID"
         echo "Band: $BAND ($([ "$BAND" = "bg" ] && echo "2.4GHz" || echo "5GHz"))"
