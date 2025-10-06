@@ -123,6 +123,15 @@ nm-hotspot list
 
 # Show current configuration
 nm-hotspot config
+
+# View logs
+nm-hotspot log
+
+# View last 50 log entries
+nm-hotspot log --tail 50
+
+# Clear log file
+nm-hotspot log --clear
 ```
 
 ### Command Options
@@ -142,6 +151,10 @@ nm-hotspot config
 **list** - List all available wireless devices
 
 **config** - Display saved configuration
+
+**log** - Show log entries
+- `--tail N` - Show last N log entries (default: 20)
+- `--clear` - Clear the log file
 
 ## Examples
 
@@ -195,7 +208,52 @@ Example configuration file:
 SSID="MyHotspot"
 PASSWORD="12345678"
 BAND="bg"
+
+# Logging settings
+ENABLE_LOGGING=true
+LOG_PRIVACY=false
 ```
+
+### Logging
+
+The logging system helps you troubleshoot issues and maintain an audit trail of hotspot operations.
+
+**Enable logging:**
+
+Edit `~/.config/nm-hotspot/hotspot.conf` and add:
+```bash
+ENABLE_LOGGING=true
+```
+
+**Log file location:**
+`~/.config/nm-hotspot/nm-hotspot.log`
+
+**Log entries include:**
+- Timestamp
+- Action performed (create, start, stop)
+- SSID used (unless privacy mode is enabled)
+- Success/failure status
+- Error messages if any
+
+**Example log output:**
+```
+[2024-10-06 14:30:15] INFO: Creating hotspot - Band: bg - SSID: MyHotspot
+[2024-10-06 14:30:16] SUCCESS: Hotspot created successfully - SSID: MyHotspot
+[2024-10-06 14:35:22] INFO: Stopping hotspot
+[2024-10-06 14:35:23] SUCCESS: Hotspot stopped
+[2024-10-06 14:40:10] ERROR: Failed to create hotspot - No wireless device found
+```
+
+**Privacy mode:**
+
+To avoid logging sensitive information like SSIDs, enable privacy mode:
+```bash
+LOG_PRIVACY=true
+```
+
+**Log rotation:**
+
+The log file is automatically rotated when it exceeds 1MB. The old log is saved as `nm-hotspot.log.old`.
 
 ## Troubleshooting
 
