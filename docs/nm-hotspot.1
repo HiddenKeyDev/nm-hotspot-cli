@@ -1,0 +1,76 @@
+.TH NM-HOTSPOT 1 "October 2025" "nm-hotspot-cli 1.0" "User Commands"
+.SH NAME
+nm-hotspot \- Simple CLI tool to manage Wi-Fi hotspots using NetworkManager
+.SH SYNOPSIS
+.B nm-hotspot
+[\fICOMMAND\fR] [\fIOPTIONS\fR]
+.SH DESCRIPTION
+nm-hotspot is a command-line tool that allows users to quickly create and manage secure Wi-Fi hotspots using NetworkManager.
+.SH COMMANDS
+.TP
+.B help
+Show help information.
+.TP
+.B create
+Create a hotspot with optional SSID, password, band, and save options.
+.TP
+.B start
+Start the saved hotspot configuration.
+.TP
+.B stop
+Stop the active hotspot.
+.TP
+.B status
+Display current hotspot status.
+.TP
+.B list
+List available wireless devices.
+.TP
+.B config
+Display saved configuration.
+.TP
+.B log
+Show or manage logs.
+.TP
+.BR log " --tail \fIN\fR"
+Show last N log entries (default: 20).
+.TP
+.BR log " --clear"
+Clear the log file.
+.SH OPTIONS (for \fBcreate\fR)
+.TP
+.B -s, --ssid \fISSID\fR
+Set the hotspot name (default: MyHotspot).
+.TP
+.B -p, --password \fIPASS\fR
+Set WPA2 password (min 8 chars; default: 12345678).
+.TP
+.B -b, --band \fIBAND\fR
+Set band: bg (2.4GHz) or a (5GHz) (default: bg).
+.TP
+.B --save
+Save the current configuration.
+.SH EXAMPLES
+.TP
+Create a hotspot with default settings:
+.B nm-hotspot create
+.TP
+Create a 5GHz hotspot:
+.B nm-hotspot create -s "Coffee-Shop" -p "Secure1234" -b a
+.TP
+Start saved hotspot:
+.B nm-hotspot start
+.TP
+Check hotspot status:
+.B nm-hotspot status
+.SH FILES
+.TP
+.B ~/.config/nm-hotspot/hotspot.conf
+Configuration file for default settings.
+.TP
+.B ~/.config/nm-hotspot/nm-hotspot.log
+Log file.
+.SH AUTHOR
+HiddenKeyDev
+.SH SEE ALSO
+.B nmcli(1)
