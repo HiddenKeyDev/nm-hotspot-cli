@@ -25,3 +25,6 @@ test:
 	@command -v shellcheck >/dev/null 2>&1 || { echo "shellcheck not installed"; exit 1; }
 	shellcheck src/nm-hotspot scripts/*.sh
 	@echo "All checks passed"
+
+install-man:
+	install -Dm644 docs/nm-hotspot.1 /usr/share/man/man1/nm-hotspot.1
